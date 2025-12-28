@@ -1,1 +1,230 @@
+Original option chains: https://www.kaggle.com/datasets/julianpanerovazquez/raw-option-chains
 
+    Dataset summary: Historical daily option chain records for Apple Inc (AAPL), from Q1 2016 to Q1 2023. 
+    Format: CSV file.
+    Publisher: Kyle Graupe (https://www.kaggle.com/datasets/kylegraupe/aapl-options-data-2016-2020/data)
+
+    QUOTE TIMING AND IDENTIFIERS
+    QUOTE_UNIXTIME: Unix timestamp when quote was captured (UNIX format)
+    QUOTE_READTIME: Human-readable quote timestamp (YYYY-MM-DD HH:MM)
+    QUOTE_DATE: Trading date of the quote (YYYY-MM-DD)
+    QUOTE_TIME_HOURS: Hour of day quote was captured (Integer from 0 to 23)
+    
+    UNDERLYING ASSET INFORMATION
+    UNDERLYING_LAST: Last traded price of underlying (USD)
+    
+    OPTION EXPIRATION INFORMATION
+    EXPIRE_DATE: Option expiration date (YYYY-MM-DD)
+    EXPIRE_UNIX: Expiration date (UNIX format)
+    DTE: Days to expiration from quote date (Calendar days)
+    
+    CALL GREEKS
+    C_DELTA: Call option delta (Unitless from 0 to 1)
+    C_GAMMA: Call option gamma 1 (USD)
+    C_VEGA: Call option vega (USD)
+    C_THETA: Call option theta (USD)
+    C_RHO: Call option rho (USD)
+    C_IV: Call implied volatility (Decimal)
+    
+    CALL PRICES AND LIQUIDITY
+    C_LAST: Last traded call option price (USD)
+    C_BID: Best bid price for the call (USD)
+    C_ASK: Best ask price for the call (USD)
+    C_VOLUME: Call trading volume Contracts
+    C_SIZE: Call bid x ask quoted size (bid x ask)
+    
+    PUT GREEKS
+    P_DELTA: Put option delta (Unitless from -1 to 0)
+    P_GAMMA: Put option gamma 1 (USD)
+    P_VEGA: Put option vega (USD)
+    P_THETA: Put option theta (USD)
+    P_RHO: Put option rho (USD)
+    P_IV: Put implied volatility (Decimal)
+    
+    PUT PRICES AND LIQUIDITY
+    P_LAST: Last traded put option price (USD)
+    P_BID: Best bid price for the put (USD)
+    P_ASK: Best ask price for the put (USD)
+    P_VOLUME: Put trading volume Contracts
+    P_SIZE: Put bid x ask quoted size (bid x ask)
+    
+    STRIKE AND MONEYNESS METRICS
+    STRIKE: Option strike price (USD)
+    STRIKE_DISTANCE: Absolute distance between strike and underlying (USD)
+    STRIKE_DISTANCE_PCT: Strike distance relative to underlying price (Fraction of underlying price)
+
+    There has been no cleaning to this dataset. Cleaning process is included in the notebooks and the output is in SVI Datasets folder
+
+Original FedFunds Fixings: https://www.kaggle.com/datasets/julianpanerovazquez/fed-funds-rates
+
+    This dataset contains historical observations of the US Federal Funds target interest rate on specific calendar dates.
+    Publisher: Investing.com (https://www.investing.com/indices/fed-funds-composite-interest-rate-historical-data)
+    Date: Calendar date for which the Federal Funds rate applies (DD/MM/YYYY)
+    Rate: Federal Funds target rate (Percentage)
+    
+
+https://www.kaggle.com/datasets/julianpanerovazquez/svi-inputs
+
+    1. rates_interpolated.csv
+
+      Daily interpolated risk-free rate series derived from the Fed Funds history input.
+      The notebook converts the source rate column to a float, reindexes the data to a
+      daily calendar, and fills missing days via time-based interpolation and forward/
+      backward filling.
+      
+      Input: FedFunds History.csv (semicolon-separated)
+      
+      Processing steps:
+        Parse Rate column from string with comma decimals
+        Convert rates to decimal form (divide by 100)
+        Create daily date index from minimum to maximum date
+        Interpolate missing values using time interpolation
+        Apply forward fill and backward fill for edge dates
+
+      Format: CSV
+      
+      Schema:
+      Column: Date
+        Type: datetime
+        Description: Calendar date
+      Column: Rate
+        Type: float
+        Description: Interpolated annualized risk-free rate in decimal form
+    
+    2. clean_train_chains.csv
+  
+      Cleaned option-chain dataset for the training period (AAPL, 2016–2020).
+      Includes raw option fields and derived maturity and moneyness variables.
+      
+      Input: aapl_2016_2020.csv (raw option chains)
+      
+      Processing steps:
+        Select and rename relevant columns
+        Drop rows with missing values
+        Convert quote and expiry dates to datetime
+        Compute time-to-maturity (TTM = round(DTE)/365)
+        Compute relative strike (STRIKE / UNDERLYING_LAST)
+        Cast numeric fields to float
+      
+      Format: CSV
+      
+      Schema:
+        Column: QUOTE_DATE
+          Type: datetime
+          Description: Option quote date
+        Column: EXPIRE_DATE
+          Type: datetime
+          Description: Option expiration date
+        Column: DTE
+          Type: numeric
+          Description: Days to expiration
+        Column: C_IV
+          Type: float
+          Description: Call implied volatility
+        Column: C_BID
+          Type: float
+          Description: Call bid price
+        Column: C_ASK
+          Type: float
+          Description: Call ask price
+        Column: STRIKE
+          Type: float
+          Description: Option strike price
+        Column: P_BID
+          Type: float
+          Description: Put bid price
+        Column: P_ASK
+          Type: float
+          Description: Put ask price
+        Column: P_IV
+          Type: float
+          Description: Put implied volatility
+        Column: UNDERLYING_LAST
+          Type: float
+          Description: Underlying spot price at quote time
+        Column: TTM
+          Type: float
+          Description: Time to maturity in years
+        Column: RELATIVE_STRIKE
+          Type: float
+          Description: Strike divided by underlying spot
+      
+    3. clean_test_chains.csv
+    
+      Cleaned option-chain dataset for the test period (AAPL, 2021–2023).
+      Structure and preprocessing are identical to the training dataset.
+  
+      Input: aapl_2021_2023.csv (raw option chains)
+      
+      Processing steps: Same cleaning and feature engineering pipeline as training data
+      
+      Format: CSV
+  
+      Schema: Identical to clean_train_chains.csv
+    
+    4. dates_train.csv
+
+      List of unique quote dates used in the training dataset, sorted in ascending order.
+      
+      Source: Extracted from cleaned and rate-merged training option data
+      
+      Processing steps:
+        Remove duplicate QUOTE_DATE values
+        Sort chronologically
+  
+      Format: CSV
+      
+      Schema
+        Column: QUOTE_DATE
+          Type: datetime
+          Description: Unique option quote date
+    
+   dates_test.csv
+
+      List of unique quote dates used in the test dataset, sorted in ascending order.
+
+      Source: Extracted from cleaned and rate-merged test option data
+      
+      Processing steps:
+      Remove duplicate QUOTE_DATE values
+      Sort chronologically
+      
+      Format: CSV
+      
+      Schema: Same as dates_train.csv
+    
+    vol_cube.npz
+
+      Compressed NumPy archive containing fixed-size implied volatility surface tensors
+      for training and test periods. Each sample corresponds to one quote date and
+      includes the calibrated SSVI/eSSVI volatility surface and auxiliary grids.
+      
+      Inputs: Cleaned option chains merged with interpolated daily rates
+      
+      Processing steps:
+        Compute forward prices using spot and risk-free rate
+        Convert strikes to log-moneyness
+        Compute total variance from call implied volatility
+        Calibrate eSSVI/SSVI parameters per quote date
+        Generate implied volatility surfaces on a fixed grid
+        Stack auxiliary channels and save as tensors
+  
+      Format: NumPy NPZ (compressed)
+      
+      CONTENTS
+      Array: train
+        Shape: (N_train_dates, 5, 20, 20)
+      
+      Array: test
+        Shape: (N_test_dates, 5, 20, 20)
+      
+      CHANNEL DEFINITIONS (per sample)
+        Channel 0: TTM grid (years, replicated across moneyness)
+        Channel 1: Implied volatility surface
+        Channel 2: Spot price grid (constant-filled)
+        Channel 3: Risk-free rate grid (constant-filled)
+        Channel 4: Strike price grid
+      
+      GRID SPECIFICATION
+        Moneyness grid: 0.90 to 1.09 in steps of 0.01 (20 points)
+        Maturity grid: 30 to 600 days in steps of 30 days (20 points, annualized)
