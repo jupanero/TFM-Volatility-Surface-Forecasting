@@ -62,8 +62,7 @@ Original FedFunds Fixings: https://www.kaggle.com/datasets/julianpanerovazquez/f
     Date: Calendar date for which the Federal Funds rate applies (DD/MM/YYYY)
     Rate: Federal Funds target rate (Percentage)
     
-
-https://www.kaggle.com/datasets/julianpanerovazquez/svi-inputs
+SSVI Interpolation outputs: https://www.kaggle.com/datasets/julianpanerovazquez/svi-inputs
 
     1. rates_interpolated.csv
 
