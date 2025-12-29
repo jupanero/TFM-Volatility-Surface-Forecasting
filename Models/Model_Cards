@@ -1,1 +1,200 @@
+MODEL CARD: ConvLSTM_VolSurface (ConvLSTM baseline)
+===============================================================================
 
+Model Details
+- Developers: Project codebase accompanying the thesis “Spatio-temporal models and domain constraints for Volatility Surface Forecasting: Designing a Delta-neutral Trading Strategy”.
+- Model type: Spatio-temporal neural network (ConvLSTM2D + 1×1 Conv2D head) trained to forecast an implied-volatility (IV) surface on a fixed moneyness–maturity grid.
+- Version / date: Experiment configuration from the provided notebook (convlstm.ipynb).
+- Input: A sequence of L=20 daily IV surfaces, each represented as a 20×20 grid (maturity × moneyness) with 1 channel (IV).
+- Output: One 20×20 grid with 1 channel (forecasted IV) at horizon H=5 trading days.
+
+Intended Use
+- Primary intended use: Forecasting the daily implied-volatility surface five trading days ahead for research and prototyping.
+- Downstream use (demonstrated): Converting predicted IV shifts into a delta-neutral short-straddle signal using a first-order vega–theta approximation and conservative bid/ask backtesting.
+- Intended users: Quantitative researchers and students in derivatives analytics; not intended as production trading infrastructure.
+
+Factors
+- Asset universe: Single-underlier focus (AAPL equity options in the thesis experiments).
+- Market regimes: Includes low-volatility and high-volatility regimes (notably the 2020 volatility spike is intentionally included in training/validation split design).
+- Grid coverage factors: Forecasts are limited to a near-the-money region (moneyness ≈ 0.90–1.09) and medium maturities (≈ 90–660 days) defined by the data-prep pipeline.
+
+Metrics
+- Training objective: Mean Absolute Percentage Error (MAPE) on the IV grid.
+- Reported metrics: MAPE (loss) and Mean Squared Error (MSE) as an additional metric.
+- Strategy-layer diagnostics (demonstrated): Correlation of predicted vs realized IV shifts; realized P&L of a mapped straddle strategy under bid/ask execution.
+
+Evaluation Data
+- Temporal split: Train period 2016–2020; test period 2021–2023 (chronological, no random mixing).
+- Validation approach: A contiguous block from within training with a gap to prevent overlap leakage between rolling windows.
+
+Training Data
+- Source and construction: Daily AAPL option-chain observations are cleaned, mapped to moneyness and maturity, and interpolated to a fixed 20×20 grid per day; then stacked into a “volatility cube” and converted into rolling supervised samples (lookback L=20, horizon H=5).
+- Key preprocessing steps: 
+  - Remove missing/invalid records; compute moneyness and time-to-maturity (year fraction).
+  - Fill incomplete grid nodes via nearest-neighbour extrapolation (after cubic interpolation) to ensure dense tensors.
+  - Optional use of risk-free rate series for later trading and physics checks (baseline model does not consume these channels).
+
+Quantitative Analyses
+- Best configuration as implemented in notebook:
+  - hidden_channels = 64
+  - kernel_size = 5
+  - output activation: softplus (enforces strictly positive IV predictions)
+  - optimizer: Adam, initial_lr = 1e-3
+  - batch_size = 16, epochs = 25
+  - LR schedule: ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-6)
+
+Ethical Considerations
+- Financial impact: Model outputs can be used to form trading signals; improper use without robust risk controls can lead to material losses.
+- Market integrity: Not designed for manipulation; however, any deployment in trading requires compliance with applicable market conduct rules.
+- Data privacy: Uses market data; no personal data is involved.
+
+Caveats and Recommendations
+- Forecast anchoring: Like many surface-level losses, MAPE can encourage persistence (forecasts close to the last observed surface), potentially understating regime shifts.
+- Economic consistency: No explicit arbitrage or PDE consistency constraints; predicted surfaces can imply option prices with undesirable properties.
+- Generalization: Single-underlier training; do not assume transfer to other names, asset classes, or volatility regimes without retraining and validation.
+- Production use: If used operationally, implement model risk governance: monitoring, stress tests, scenario analysis, and trading risk limits.
+
+
+MODEL CARD: ConvTF_VolSurface (Convolutional Transformer)
+===============================================================================
+
+Model Details
+- Developers: Same project codebase (convtf.ipynb).
+- Model type: Encoder–decoder Transformer adapted to sequences of 2D IV grids using convolutional embeddings and convolutional attention blocks.
+- Input: L=20 daily IV surfaces (20×20×1), plus a “query” surface (typically the last frame in the lookback).
+- Output: One 20×20×1 forecasted IV surface at horizon H=5 trading days.
+
+Intended Use
+- Same as ConvLSTM baseline, with emphasis on learning longer-range temporal dependencies via attention.
+- Demonstration use: Forecast-to-signal translation for a delta-neutral short-straddle heuristic backtest.
+
+Factors
+- Same domain factors as the baseline: single-underlier (AAPL) and a fixed near-the-money grid.
+
+Metrics
+- Training objective: MAPE on the IV grid.
+- Reported metrics: MAPE and MSE.
+
+Evaluation Data
+- Same chronological split: train 2016–2020; test 2021–2023.
+
+Training Data
+- Same as ConvLSTM: cubic-interpolated dense grids (unless replaced by an alternative surface-construction method upstream).
+
+Quantitative Analyses
+- Architecture components (as implemented):
+  - Convolutional embedding stack: 4 TimeDistributed Conv2D layers (min_filters=4) to map 1 channel to D channels.
+  - Positional encoding: sinusoidal encoding along the time axis, broadcast over the spatial grid.
+  - Attention: convolutional self-attention across time in the encoder; convolutional cross-attention in the decoder.
+  - Output head: simple 1×1 Conv2D to 1 channel (USE_SFFN = False in the notebook’s main setting; an SFFN head is available as an option).
+- Key hyperparameters recorded in the notebook:
+  - D = 32 (channel width)
+  - HEADS = 4 (attention heads)
+  - optimizer: Adam, initial_lr = 1e-3
+  - batch_size = 16, epochs = 25
+  - LR schedule: ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=2, min_lr=1e-6)
+
+Ethical Considerations
+- Same as baseline; additionally, attention models can appear “confident” while still being structurally inconsistent in a derivatives sense.
+
+Caveats and Recommendations
+- Surface-level loss limitations: MAPE focuses on absolute surface fit; trading decisions depend heavily on IV *changes* and tail behaviour.
+- Coherence: No explicit financial constraint; downstream pricing/hedging applications should add arbitrage checks or structural regularization.
+- Stability: Attention models can be sensitive to hyperparameters and normalization; ensure reproducibility with fixed seeds and robust OOS checks.
+
+
+MODEL CARD: PI-ConvTF_VolSurface (Physics-Informed Convolutional Transformer, cubic-spline surfaces)
+===============================================================================
+
+Model Details
+- Developers: Same project codebase (pi-convtf.ipynb).
+- Model type: Multi-output physics-informed model:
+  (1) a ConvTF-style forecaster for IV surfaces, and
+  (2) a differentiable physics residual head that penalizes violations of the Black–Scholes PDE computed from option prices reconstructed from the predicted IV surface.
+- Input (per time step): 5-channel tensor on the same 20×20 grid:
+  1) time-to-maturity (TTM, years),
+  2) implied volatility,
+  3) spot price (broadcast),
+  4) risk-free rate (broadcast),
+  5) strike (absolute, on grid).
+  Lookback window length L=20.
+- Outputs:
+  - Primary output: forecasted IV surface (20×20×1) at H=5 days.
+  - Secondary output: PDE residual field used for physics loss regularization.
+
+Intended Use
+- Research: Produce forecasts that are not only accurate on average but also more financially coherent when mapped into option prices.
+- Demonstration: Same forecast-to-signal pipeline for delta-neutral short-straddle selection.
+
+Factors
+- Same asset and regime factors; additionally, dependence on:
+  - risk-free rate proxy quality,
+  - Black–Scholes assumptions (European option pricing under simplified dynamics).
+
+Metrics
+- Data loss (primary): MAPE on IV surface.
+- Physics loss (regularizer): MAE on PDE residual field (target residual = 0).
+- Overall training objective: weighted sum of data and physics losses.
+
+Evaluation Data
+- Same chronological split: train 2016–2020; test 2021–2023.
+
+Training Data
+- Daily surfaces constructed via cubic scattered-data interpolation to the fixed 20×20 grid, with missing nodes filled by nearest-neighbour.
+- Auxiliary channels (TTM, spot, rate, strike) are constructed on the same grid and normalized for training stability.
+
+Quantitative Analyses
+- Architecture (high level): ConvTF backbone (conv embedding + encoder–decoder conv-attention blocks) shared with the non-physics model; additional differentiable pricing/PDE residual computation for the physics output.
+- Key hyperparameters recorded in the notebook:
+  - IN_CH = 5 (input channels)
+  - D = 32, HEADS = 4, USE_SFFN = False
+  - optimizer: Adam(learning_rate=1e-3, epsilon=1e-4, clipnorm=1.0)
+  - batch_size = 16, epochs = 25
+  - Physics weighting: LAMBDA = 0.1, applied as loss_weights=[1.0, 0.1]
+
+Ethical Considerations
+- Model risk: Introducing a physics penalty can improve coherence but may also induce systematic bias if the constraint (Black–Scholes PDE) is misspecified for real markets.
+- Trading impact: A “more coherent” surface does not guarantee profitability; ensure risk governance and robust evaluation before any use.
+
+Caveats and Recommendations
+- Constraint mismatch: Black–Scholes PDE is an approximation; real markets exhibit dividends, jumps, stochastic volatility, and frictions.
+- Numerical sensitivity: PDE residuals require derivatives; instability can arise if grids, normalization, or AD settings are not carefully controlled.
+- Validation: Evaluate both surface errors and shift/strategy-layer metrics; improvements in MAPE may not translate into improved economic outcomes.
+
+
+MODEL CARD: PI-ConvTF_VolSurface (Physics-Informed ConvTF, SSVI-calibrated surfaces)
+===============================================================================
+
+Model Details
+- Developers: Same project codebase; SSVI variant uses precomputed inputs loaded in svi-pi-convtf.ipynb.
+- Model type: Same as PI-ConvTF above, but trained/evaluated on SSVI-calibrated (arbitrage-aware) daily IV surfaces rather than purely cubic-interpolated surfaces.
+
+Intended Use
+- Research: Combine two forms of structural discipline:
+  - SSVI surface construction to reduce static arbitrage issues in the input/output surfaces,
+  - Black–Scholes PDE residual regularization during training.
+
+Factors
+- Same as PI-ConvTF plus:
+  - calibration stability and parameterization choices in the SSVI step,
+  - coverage limitations of listed options (liquidity-driven quote sparsity).
+
+Metrics
+- Same as PI-ConvTF: MAPE for IV + PDE residual loss (MAE), combined with a weighting coefficient.
+
+Evaluation Data
+- Same train/test periods are used in the thesis pipeline; the SSVI notebook loads pre-split train/test cubes from storage.
+
+Training Data
+- SSVI-calibrated daily IV grids on the same fixed 20×20 moneyness–maturity lattice, stacked into volatility cubes.
+- Cleaned option-chain data and associated date/rate series loaded from prepared files.
+
+Quantitative Analyses
+- Training and architecture are materially the same as PI-ConvTF; the key difference is the upstream surface generation and (typically) reduced incidence of static arbitrage in the dataset.
+
+Ethical Considerations
+- Same as PI-ConvTF.
+
+Caveats and Recommendations
+- Calibration dependency: The quality of SSVI calibration can dominate model performance if calibration fails or is unstable in certain regimes.
+- Residual coherence vs market realism: Even if both SSVI and PDE residual are satisfied, the resulting surface may still be economically unhelpful for trading if the forecasted *shifts* are weak or noisy.
